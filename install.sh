@@ -15,6 +15,7 @@ TTY=/dev/tty
 BACKUP_DIR=""
 MANIFEST=""
 REMOTE_KEY_ADDED=0
+PUBKEY_BLOB=""
 
 log() {
     printf '%s | %s\n' "$(date -Is)" "$*" | tee -a "$LOG_FILE"
@@ -166,6 +167,7 @@ write_state() {
         printf 'AP_SSID=%q\n' "$AP_SSID"
         printf 'AP_SUBNET=%q\n' "$AP_SUBNET"
         printf 'AP_GATEWAY=%q\n' "$AP_GATEWAY"
+        printf 'AUTH_MODE=%q\n' "$AUTH_MODE"
         printf 'PUBKEY_BLOB=%q\n' "$PUBKEY_BLOB"
         printf 'REMOTE_KEY_ADDED=%q\n' "$REMOTE_KEY_ADDED"
     } >"$STATE_DIR/state.env"
@@ -182,6 +184,12 @@ prompt_secret AP_PASSWORD "WiFi password (8-63 characters)"
 prompt VPS_HOST "VPS IPv4 address"
 prompt VPS_USER "VPS SSH login" "root"
 prompt_secret VPS_PASSWORD "VPS SSH password"
+prompt AUTH_MODE "Tunnel authentication mode: password (no VPS changes) or key" "password"
+AUTH_MODE=${AUTH_MODE,,}
+case "$AUTH_MODE" in
+    password|key) ;;
+    *) die "Authentication mode must be 'password' or 'key'." ;;
+esac
 
 validate_inputs
 
@@ -205,6 +213,7 @@ TARGETS=(
     "$STATE_DIR/vps-known_hosts"
     /root/.ssh/vpn-ap-socks
     /root/.ssh/vpn-ap-socks.pub
+    /etc/vpn-ap-installer/vps-password
     "$STATE_DIR/state.env"
     /etc/NetworkManager/conf.d/90-vpn-ap-unmanaged.conf
     /etc/systemd/system/vpn-ap-interface.service
@@ -277,28 +286,40 @@ select_ap_network
 log "Selected AP subnet $AP_SUBNET; management remains on $DEFAULT_IF"
 
 KEY_FILE=/root/.ssh/vpn-ap-socks
-if [[ ! -s $KEY_FILE || ! -s $KEY_FILE.pub ]]; then
-    ssh-keygen -q -t ed25519 -N '' -C "vpn-ap-forwarding" -f "$KEY_FILE"
-    log "Created a dedicated SSH forwarding key"
+PASSWORD_FILE=/etc/vpn-ap-installer/vps-password
+if [[ $AUTH_MODE == password ]]; then
+    write_file "$PASSWORD_FILE" 0600 <<EOF
+$VPS_PASSWORD
+EOF
+    TEST_TUNNEL=(sshpass -f "$PASSWORD_FILE" ssh -n -p 22 \
+        -o PreferredAuthentications=password,keyboard-interactive -o PubkeyAuthentication=no \
+        -o NumberOfPasswordPrompts=1 -o ConnectTimeout=10 -o ExitOnForwardFailure=yes \
+        -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS")
+    SSH_EXEC="/usr/bin/sshpass -f $PASSWORD_FILE /usr/bin/ssh -N -T -D 127.0.0.1:$SOCKS_PORT -o PreferredAuthentications=password,keyboard-interactive -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o ExitOnForwardFailure=yes -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -o ConnectionAttempts=3 -o ConnectTimeout=10 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$KNOWN_HOSTS $VPS_USER@$VPS_HOST"
+    log "Password authentication selected; VPS configuration will not be changed"
+else
+    if [[ ! -s $KEY_FILE || ! -s $KEY_FILE.pub ]]; then
+        ssh-keygen -q -t ed25519 -N '' -C "vpn-ap-forwarding" -f "$KEY_FILE"
+        log "Created a dedicated SSH forwarding key"
+    fi
+    chmod 600 "$KEY_FILE"
+    chmod 644 "$KEY_FILE.pub"
+    read -r PUBKEY_TYPE PUBKEY_BLOB PUBKEY_COMMENT <"$KEY_FILE.pub"
+    AUTH_LINE="restrict,port-forwarding,command=\"/bin/false\" $PUBKEY_TYPE $PUBKEY_BLOB vpn-ap-forwarding"
+    REMOTE_RESULT=$(printf '%s\n%s\n' "$PUBKEY_BLOB" "$AUTH_LINE" | \
+        SSHPASS="$VPS_PASSWORD" sshpass -e ssh "${SSH_OPTIONS[@]}" "$VPS_USER@$VPS_HOST" \
+        'set -eu; umask 077; read -r blob; read -r line; mkdir -p "$HOME/.ssh" "$HOME/.vpn-ap-backups"; touch "$HOME/.ssh/authorized_keys"; cp -a "$HOME/.ssh/authorized_keys" "$HOME/.vpn-ap-backups/authorized_keys.'"$TIMESTAMP"'"; chmod 700 "$HOME/.ssh"; chmod 600 "$HOME/.ssh/authorized_keys"; if grep -qF "$blob" "$HOME/.ssh/authorized_keys"; then echo EXISTING; else printf "\n%s\n" "$line" >>"$HOME/.ssh/authorized_keys"; echo ADDED; fi')
+    if [[ $REMOTE_RESULT == *ADDED* ]]; then REMOTE_KEY_ADDED=1; fi
+    TEST_TUNNEL=(ssh -n -p 22 -o BatchMode=yes -o IdentitiesOnly=yes \
+        -o ConnectTimeout=10 -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=yes \
+        -o UserKnownHostsFile="$KNOWN_HOSTS" -i "$KEY_FILE")
+    SSH_EXEC="/usr/bin/ssh -N -T -D 127.0.0.1:$SOCKS_PORT -o BatchMode=yes -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -o ConnectionAttempts=3 -o ConnectTimeout=10 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$KNOWN_HOSTS -i $KEY_FILE $VPS_USER@$VPS_HOST"
+    log "Dedicated forwarding key verified in VPS authorized_keys (backup: ~/.vpn-ap-backups/authorized_keys.$TIMESTAMP)"
 fi
-chmod 600 "$KEY_FILE"
-chmod 644 "$KEY_FILE.pub"
-read -r PUBKEY_TYPE PUBKEY_BLOB PUBKEY_COMMENT <"$KEY_FILE.pub"
-AUTH_LINE="restrict,port-forwarding,command=\"/bin/false\" $PUBKEY_TYPE $PUBKEY_BLOB vpn-ap-forwarding"
-
-REMOTE_RESULT=$(printf '%s\n%s\n' "$PUBKEY_BLOB" "$AUTH_LINE" | \
-    SSHPASS="$VPS_PASSWORD" sshpass -e ssh "${SSH_OPTIONS[@]}" "$VPS_USER@$VPS_HOST" \
-    'set -eu; umask 077; read -r blob; read -r line; mkdir -p "$HOME/.ssh" "$HOME/.vpn-ap-backups"; touch "$HOME/.ssh/authorized_keys"; cp -a "$HOME/.ssh/authorized_keys" "$HOME/.vpn-ap-backups/authorized_keys.'"$TIMESTAMP"'"; chmod 700 "$HOME/.ssh"; chmod 600 "$HOME/.ssh/authorized_keys"; if grep -qF "$blob" "$HOME/.ssh/authorized_keys"; then echo EXISTING; else printf "\n%s\n" "$line" >>"$HOME/.ssh/authorized_keys"; echo ADDED; fi')
-if [[ $REMOTE_RESULT == *ADDED* ]]; then REMOTE_KEY_ADDED=1; fi
 unset VPS_PASSWORD SSHPASS AUTH_LINE
-log "Dedicated forwarding key verified in VPS authorized_keys (backup: ~/.vpn-ap-backups/authorized_keys.$TIMESTAMP)"
 write_state
 
-KEY_SSH_OPTIONS=(-p 22 -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
-    -o ExitOnForwardFailure=yes \
-    -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" -i "$KEY_FILE")
-timeout 25 ssh -n "${KEY_SSH_OPTIONS[@]}" -N -T -D 127.0.0.1:1099 \
-    "$VPS_USER@$VPS_HOST" &
+timeout 25 "${TEST_TUNNEL[@]}" -N -T -D 127.0.0.1:1099 "$VPS_USER@$VPS_HOST" &
 TEST_SSH_PID=$!
 sleep 3
 kill -0 "$TEST_SSH_PID" 2>/dev/null || die "Dedicated forwarding key test failed."
@@ -306,7 +327,7 @@ curl --socks5-hostname 127.0.0.1:1099 --connect-timeout 8 --max-time 15 \
     --fail --silent https://1.1.1.1/cdn-cgi/trace >/dev/null || die "Dedicated forwarding data test failed."
 kill "$TEST_SSH_PID" 2>/dev/null || true
 wait "$TEST_SSH_PID" 2>/dev/null || true
-log "Dedicated key accepts SSH dynamic forwarding"
+log "$AUTH_MODE authentication accepts SSH dynamic forwarding"
 
 write_file /etc/NetworkManager/conf.d/90-vpn-ap-unmanaged.conf 0644 <<EOF
 [keyfile]
@@ -416,7 +437,7 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/ssh -N -T -D 127.0.0.1:$SOCKS_PORT -o BatchMode=yes -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -o ConnectionAttempts=3 -o ConnectTimeout=10 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$KNOWN_HOSTS -i $KEY_FILE $VPS_USER@$VPS_HOST
+ExecStart=$SSH_EXEC
 Restart=always
 RestartSec=3s
 
