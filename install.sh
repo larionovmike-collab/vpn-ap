@@ -16,6 +16,7 @@ BACKUP_DIR=""
 MANIFEST=""
 REMOTE_KEY_ADDED=0
 PUBKEY_BLOB=""
+EXPECTED_IP=""
 
 log() {
     printf '%s | %s\n' "$(date -Is)" "$*" | tee -a "$LOG_FILE"
@@ -171,6 +172,7 @@ write_state() {
         printf 'AP_SUBNET=%q\n' "$AP_SUBNET"
         printf 'AP_GATEWAY=%q\n' "$AP_GATEWAY"
         printf 'AUTH_MODE=%q\n' "$AUTH_MODE"
+        printf 'EXPECTED_IP=%q\n' "$EXPECTED_IP"
         printf 'PUBKEY_BLOB=%q\n' "$PUBKEY_BLOB"
         printf 'REMOTE_KEY_ADDED=%q\n' "$REMOTE_KEY_ADDED"
     } >"$STATE_DIR/state.env"

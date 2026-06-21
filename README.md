@@ -114,6 +114,18 @@ systemctl status vpn-ap-socks vpn-ap-redsocks vpn-ap-transparent
 systemctl status vpn-ap-watchdog.timer dnscrypt-proxy hostapd dnsmasq
 ```
 
+## Быстрая смена VPS
+
+Чтобы заменить VPS, не переустанавливая и не перенастраивая WiFi-точку, запустите:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/larionovmike-collab/vpn-ap/refs/heads/main/change-vps.sh | sudo bash
+```
+
+Скрипт запросит новый IPv4, SSH-логин и пароль. Он работает только в режиме `password` и не выполняет на новом VPS удалённых команд. Сначала параллельно поднимается временный SOCKS на порту `1099` и проверяется реальный внешний IP. Действующий туннель переключается только после успешной проверки. Перед переключением создаётся резервная копия `/var/backups/vpn-ap-installer/vps-change-<дата>`; при ошибке автоматически возвращается предыдущая конфигурация.
+
+При смене VPS не изменяются SSID, пароль WiFi, DHCP-подсеть и default route Raspberry.
+
 ## Откат
 
 ```bash
