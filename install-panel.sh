@@ -15,6 +15,7 @@ secret() { local var=$1 text=$2 value; printf '%s: ' "$text" >"$TTY"; IFS= read 
 
 [[ $EUID -eq 0 ]] || die "Run as root."
 [[ -r $TTY && -w $TTY ]] || die "An interactive terminal is required."
+log "Starting wired HTTPS panel installation"
 [[ -r /var/lib/vpn-ap-installer/state.env ]] || die "Install the VPN AP before installing the panel."
 
 LAN_IF=$(ip -4 route show default | awk 'NR==1 {for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}')
@@ -22,6 +23,7 @@ LAN_IF=$(ip -4 route show default | awk 'NR==1 {for(i=1;i<=NF;i++) if($i=="dev")
 LAN_CIDR=$(ip -o -4 address show dev "$LAN_IF" scope global | awk 'NR==1 {print $4}')
 [[ -n $LAN_CIDR ]] || die "The wired interface has no IPv4 address."
 LAN_IP=${LAN_CIDR%/*}
+log "Wired interface detected: $LAN_IF ($LAN_CIDR)"
 
 prompt PANEL_USER "Panel administrator login" "admin"
 [[ $PANEL_USER =~ ^[A-Za-z_][A-Za-z0-9_.-]{2,31}$ ]] || die "Invalid panel login."
@@ -32,6 +34,7 @@ secret PANEL_PASSWORD_CONFIRM "Repeat panel administrator password"
 unset PANEL_PASSWORD_CONFIRM
 
 export DEBIAN_FRONTEND=noninteractive
+log "Installing panel dependencies"
 apt-get update
 apt-get install -y python3 openssl curl
 
@@ -66,6 +69,7 @@ if [[ -r "$SOURCE_ROOT/panel/vpn_ap_panel.py" && -r "$SOURCE_ROOT/panel/index.ht
     CHANGE_VPS_SOURCE="$SOURCE_ROOT/change-vps.sh"
 else
     RAW_BASE=${VPN_AP_RAW_BASE:-$RAW_BASE_DEFAULT}
+    log "Downloading panel assets from $RAW_BASE"
     curl -fsSL "$RAW_BASE/panel/vpn_ap_panel.py" -o "$TMP/vpn_ap_panel.py"
     curl -fsSL "$RAW_BASE/panel/index.html" -o "$TMP/index.html"
     curl -fsSL "$RAW_BASE/change-vps.sh" -o "$TMP/change-vps.sh"

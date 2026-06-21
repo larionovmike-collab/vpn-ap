@@ -134,6 +134,15 @@ curl -fsSL https://raw.githubusercontent.com/larionovmike-collab/vpn-ap/refs/hea
 curl -fsSL https://raw.githubusercontent.com/larionovmike-collab/vpn-ap/refs/heads/main/install-panel.sh | sudo bash
 ```
 
+Если терминал или `sudo` некорректно работают с интерактивными приглашениями через pipe, используйте диагностируемый вариант:
+
+```bash
+curl -4 -fL --connect-timeout 10 --max-time 30 \
+  https://raw.githubusercontent.com/larionovmike-collab/vpn-ap/refs/heads/main/install-panel.sh \
+  -o /tmp/install-panel.sh
+sudo bash /tmp/install-panel.sh
+```
+
 Установщик запросит отдельный логин и пароль администратора панели. Пароль хранится только как `scrypt`-хеш. Использовать SSH-пароль Raspberry не требуется.
 
 Панель автоматически привязывается только к IPv4 проводного интерфейса с default route и открывается по адресу:
