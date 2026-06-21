@@ -35,8 +35,10 @@ fi
 
 prompt PANEL_USER "Panel administrator login" "admin"
 [[ $PANEL_USER =~ ^[A-Za-z_][A-Za-z0-9_.-]{2,31}$ ]] || die "Invalid panel login."
-secret PANEL_PASSWORD "Panel administrator password (minimum 12 characters)"
-(( ${#PANEL_PASSWORD} >= 12 )) || die "Panel password is too short."
+secret PANEL_PASSWORD "Panel administrator password (may be empty)"
+if [[ -z $PANEL_PASSWORD ]]; then
+    log "WARNING: panel administrator password is empty"
+fi
 secret PANEL_PASSWORD_CONFIRM "Repeat panel administrator password"
 [[ $PANEL_PASSWORD == "$PANEL_PASSWORD_CONFIRM" ]] || die "Passwords do not match."
 unset PANEL_PASSWORD_CONFIRM
