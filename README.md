@@ -131,7 +131,7 @@ curl -fsSL https://raw.githubusercontent.com/larionovmike-collab/vpn-ap/refs/hea
 После основной установки можно добавить минималистичную HTTPS-панель:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/vpn-ap-ssh-socks/main/install-panel.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/larionovmike-collab/vpn-ap/refs/heads/main/install-panel.sh | sudo bash
 ```
 
 Установщик запросит отдельный логин и пароль администратора панели. Пароль хранится только как `scrypt`-хеш. Использовать SSH-пароль Raspberry не требуется.
@@ -156,7 +156,7 @@ https://<LAN-IP-Raspberry>:8443
 Откатить последнюю установку или перенастройку панели можно командой:
 
 ```bash
-sudo bash remove-panel.sh
+curl -fsSL https://raw.githubusercontent.com/larionovmike-collab/vpn-ap/refs/heads/main/remove-panel.sh | sudo bash
 ```
 
 ## Откат
