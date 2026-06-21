@@ -150,7 +150,7 @@ PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 
 [Install]
 WantedBy=multi-user.target
@@ -159,7 +159,21 @@ EOF
 systemctl daemon-reload
 systemd-analyze verify vpn-ap-panel.service
 systemctl enable --now vpn-ap-panel.service
-systemctl is-active --quiet vpn-ap-panel.service || die "Panel service failed to start."
-curl --insecure --fail --silent "https://$LAN_IP:8443/" | grep -q '<title>VPN AP</title>' || die "Panel HTTPS check failed."
+PANEL_CHECK="$TMP/panel-check.html"
+PANEL_READY=0
+for _ in $(seq 1 20); do
+    if systemctl is-active --quiet vpn-ap-panel.service && \
+        curl --insecure --fail --silent --connect-timeout 2 --max-time 5 \
+            "https://$LAN_IP:8443/" -o "$PANEL_CHECK" && \
+        grep -q '<title>VPN AP</title>' "$PANEL_CHECK"; then
+        PANEL_READY=1
+        break
+    fi
+    sleep 1
+done
+if (( ! PANEL_READY )); then
+    journalctl -u vpn-ap-panel.service -n 30 --no-pager >&2 || true
+    die "Panel HTTPS check failed after 20 attempts."
+fi
 log "Panel installed successfully on wired interface $LAN_IF"
 printf '\nPanel ready: https://%s:8443\nLogin: %s\nBackup: %s\n' "$LAN_IP" "$PANEL_USER" "$BACKUP" >"$TTY"
