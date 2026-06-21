@@ -227,6 +227,7 @@ TARGETS=(
     /etc/dnsmasq.d/vpn-ap.conf
     /etc/dnscrypt-proxy/dnscrypt-proxy.toml
     /etc/redsocks-vpn-ap.conf
+    /etc/systemd/system/redsocks.service
     /etc/systemd/system/vpn-ap-socks.service
     /etc/systemd/system/vpn-ap-redsocks.service
     /usr/local/sbin/vpn-ap-transparent-up
@@ -261,6 +262,8 @@ apt-get install -y hostapd dnsmasq redsocks dnscrypt-proxy openssh-client sshpas
     curl ca-certificates iptables iw rfkill dnsutils python3
 cleanup_policy
 POLICY_CREATED=0
+systemctl mask --now redsocks.service
+log "Conflicting package redsocks.service masked; vpn-ap-redsocks.service will own the proxy ports"
 log "Required packages installed"
 
 IW_DUMP=$(mktemp)
