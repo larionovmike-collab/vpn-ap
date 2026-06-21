@@ -119,8 +119,11 @@ select_ap_network() {
     # Ignore the installer-owned wlan0 network so an idempotent rerun selects it again.
     local_networks=$(ip -o -4 address show | awk -v ap="$AP_IF" '$2 != ap'; \
         ip -4 route show table all | awk -v ap="$AP_IF" '$0 !~ (" dev " ap "( |$)")')
-    remote_networks=$(SSHPASS="$VPS_PASSWORD" sshpass -e ssh -n "${SSH_OPTIONS[@]}" \
-        "$VPS_USER@$VPS_HOST" 'ip -o -4 address show; ip -4 route show table all')
+    remote_networks=""
+    if [[ $AUTH_MODE == key ]]; then
+        remote_networks=$(SSHPASS="$VPS_PASSWORD" sshpass -e ssh -n "${SSH_OPTIONS[@]}" \
+            "$VPS_USER@$VPS_HOST" 'ip -o -4 address show; ip -4 route show table all')
+    fi
 
     selected=$(LOCAL_NETWORKS="$local_networks" REMOTE_NETWORKS="$remote_networks" python3 <<'PY'
 import ipaddress, os, re
@@ -278,12 +281,20 @@ rm -f "$TMP_HOSTS"
 SSH_OPTIONS=(-p 22 -o ConnectTimeout=10 -o StrictHostKeyChecking=yes \
     -o UserKnownHostsFile="$KNOWN_HOSTS" -o PreferredAuthentications=password \
     -o PubkeyAuthentication=no)
-SSHPASS="$VPS_PASSWORD" sshpass -e ssh -n "${SSH_OPTIONS[@]}" \
-    "$VPS_USER@$VPS_HOST" 'printf VPS_LOGIN_OK' | grep -q VPS_LOGIN_OK
-log "VPS password login and pinned host key verified"
+if [[ $AUTH_MODE == key ]]; then
+    SSHPASS="$VPS_PASSWORD" sshpass -e ssh -n "${SSH_OPTIONS[@]}" \
+        "$VPS_USER@$VPS_HOST" 'printf VPS_LOGIN_OK' | grep -q VPS_LOGIN_OK
+    log "VPS shell access verified for restricted-key installation"
+else
+    log "VPS host key pinned; password will be validated only by the SOCKS forwarding connection"
+fi
 
 select_ap_network
-log "Selected AP subnet $AP_SUBNET; management remains on $DEFAULT_IF"
+if [[ $AUTH_MODE == key ]]; then
+    log "Selected AP subnet $AP_SUBNET after checking Raspberry and VPS routes; management remains on $DEFAULT_IF"
+else
+    log "Selected AP subnet $AP_SUBNET from Raspberry routes; no VPS shell command was executed"
+fi
 
 KEY_FILE=/root/.ssh/vpn-ap-socks
 PASSWORD_FILE=/etc/vpn-ap-installer/vps-password
