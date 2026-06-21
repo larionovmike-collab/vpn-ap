@@ -10,6 +10,16 @@ TTY=/dev/tty
 COMMITTED=0
 TEST_PID=""
 NEW_FIREWALL_RULE_ADDED=0
+NONINTERACTIVE=0
+CONFIG_FILE=""
+
+if [[ ${1:-} == --config && -n ${2:-} ]]; then
+    NONINTERACTIVE=1
+    CONFIG_FILE=$2
+elif [[ $# -ne 0 ]]; then
+    printf 'Usage: %s [--config ROOT_ONLY_FILE]\n' "$0" >&2
+    exit 2
+fi
 
 log() { printf '%s | CHANGE-VPS | %s\n' "$(date -Is)" "$*" | tee -a "$LOG_FILE"; }
 
@@ -105,7 +115,9 @@ wait_for_port() {
 }
 
 [[ $EUID -eq 0 ]] || die "Run as root."
-[[ -r $TTY && -w $TTY ]] || die "An interactive terminal is required."
+if (( ! NONINTERACTIVE )); then
+    [[ -r $TTY && -w $TTY ]] || die "An interactive terminal is required."
+fi
 [[ -r $STATE_FILE ]] || die "The existing deployment state was not found."
 # shellcheck disable=SC1090
 source "$STATE_FILE"
@@ -116,9 +128,19 @@ OLD_REMOTE_KEY_ADDED=${REMOTE_KEY_ADDED:-0}
 OLD_EXPECTED_IP=${EXPECTED_IP:-}
 DEFAULT_IF=$(ip -4 route show default | awk 'NR==1 {for (i=1;i<=NF;i++) if ($i=="dev") print $(i+1)}')
 
-prompt NEW_VPS_HOST "New VPS IPv4 address" "$OLD_VPS_HOST"
-prompt NEW_VPS_USER "New VPS SSH login" "${VPS_USER:-root}"
-prompt_secret NEW_VPS_PASSWORD "New VPS SSH password"
+if (( NONINTERACTIVE )); then
+    [[ -f $CONFIG_FILE && $(stat -c %a "$CONFIG_FILE") == 600 ]] || die "Config file must exist with mode 0600."
+    mapfile -t CONFIG_LINES <"$CONFIG_FILE"
+    (( ${#CONFIG_LINES[@]} == 4 )) || die "Config file must contain host, user, password and accepted fingerprint."
+    NEW_VPS_HOST=${CONFIG_LINES[0]}
+    NEW_VPS_USER=${CONFIG_LINES[1]}
+    NEW_VPS_PASSWORD=${CONFIG_LINES[2]}
+    ACCEPTED_FINGERPRINT=${CONFIG_LINES[3]}
+else
+    prompt NEW_VPS_HOST "New VPS IPv4 address" "$OLD_VPS_HOST"
+    prompt NEW_VPS_USER "New VPS SSH login" "${VPS_USER:-root}"
+    prompt_secret NEW_VPS_PASSWORD "New VPS SSH password"
+fi
 validate_ipv4 "$NEW_VPS_HOST" || die "Invalid VPS IPv4 address."
 [[ $NEW_VPS_USER =~ ^[a-zA-Z_][a-zA-Z0-9_.-]*$ ]] || die "Invalid VPS login."
 [[ -n $NEW_VPS_PASSWORD ]] || die "VPS password cannot be empty."
@@ -131,11 +153,17 @@ unset NEW_VPS_PASSWORD
 
 ssh-keyscan -T 8 -H "$NEW_VPS_HOST" >"$TMP_HOSTS" 2>/dev/null
 [[ -s $TMP_HOSTS ]] || die "Could not retrieve the new VPS SSH host key."
-printf '\nNew VPS SSH host key fingerprint:\n' >"$TTY"
-ssh-keygen -lf "$TMP_HOSTS" >"$TTY"
-printf 'Confirm that this fingerprint belongs to the new VPS [y/N]: ' >"$TTY"
-IFS= read -r answer <"$TTY"
-[[ $answer == y || $answer == Y ]] || die "Fingerprint was not accepted."
+FINGERPRINT_OUTPUT=$(ssh-keygen -lf "$TMP_HOSTS")
+if (( NONINTERACTIVE )); then
+    printf '%s\n' "$FINGERPRINT_OUTPUT" >>"$LOG_FILE"
+    printf '%s\n' "$FINGERPRINT_OUTPUT" | awk '{print $2}' | grep -qxF "$ACCEPTED_FINGERPRINT" || die "Accepted fingerprint does not match the new VPS."
+else
+    printf '\nNew VPS SSH host key fingerprint:\n' >"$TTY"
+    printf '%s\n' "$FINGERPRINT_OUTPUT" >"$TTY"
+    printf 'Confirm that this fingerprint belongs to the new VPS [y/N]: ' >"$TTY"
+    IFS= read -r answer <"$TTY"
+    [[ $answer == y || $answer == Y ]] || die "Fingerprint was not accepted."
+fi
 
 log "Testing the new VPS in parallel; the current tunnel remains active"
 timeout 30 sshpass -f "$TMP_PASSWORD" ssh -n -N -T -D "127.0.0.1:$TEST_PORT" \
@@ -262,5 +290,9 @@ log "VPS switch completed successfully"
 if [[ $OLD_AUTH_MODE == key && $OLD_REMOTE_KEY_ADDED == 1 ]]; then
     log "NOTICE: the installer key on old VPS $OLD_VPS_HOST was not removed automatically"
 fi
-printf '\nVPS changed successfully. New exit IPv4: %s\nBackup: %s\n' \
-    "$NEW_EXPECTED_IP" "$CHANGE_BACKUP" >"$TTY"
+if (( NONINTERACTIVE )); then
+    log "New exit IPv4: $NEW_EXPECTED_IP; backup: $CHANGE_BACKUP"
+else
+    printf '\nVPS changed successfully. New exit IPv4: %s\nBackup: %s\n' \
+        "$NEW_EXPECTED_IP" "$CHANGE_BACKUP" >"$TTY"
+fi

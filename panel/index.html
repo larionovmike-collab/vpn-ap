@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VPN AP</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0b1018;--card:#121a26;--line:#243044;--text:#eef4ff;--muted:#91a1b8;--accent:#68e0bd;--danger:#ff7c8b}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#172237 0,var(--bg) 42%);font:15px/1.5 system-ui,sans-serif;color:var(--text);min-height:100vh}
+    main{width:min(980px,calc(100% - 32px));margin:42px auto}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}h1{font-size:25px;margin:0}h2{font-size:17px;margin:0 0 17px}.muted{color:var(--muted)}
+    .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}.card{background:color-mix(in srgb,var(--card) 94%,transparent);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 18px 60px #0004}.wide{grid-column:1/-1}
+    label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,select{width:100%;border:1px solid var(--line);border-radius:10px;background:#0b121d;color:var(--text);padding:11px 12px;outline:none}input:focus,select:focus{border-color:var(--accent)}
+    button{border:0;border-radius:10px;padding:11px 15px;background:var(--accent);color:#062219;font-weight:700;cursor:pointer;margin-top:16px}button.secondary{background:#243044;color:var(--text)}button.danger{background:var(--danger);color:#2c0710}button:disabled{opacity:.5;cursor:wait}
+    .services{display:flex;flex-wrap:wrap;gap:8px}.pill{padding:7px 10px;border-radius:99px;background:#1d2939;color:var(--muted);font-size:12px}.pill.ok{color:var(--accent);background:#123029}.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}.fact{background:#0c1420;border:1px solid var(--line);border-radius:12px;padding:13px}.fact b{display:block;margin-top:3px;overflow-wrap:anywhere}
+    .message{display:none;margin:16px 0 0;padding:11px;border-radius:10px;background:#10271f;color:var(--accent);white-space:pre-wrap}.message.error{background:#30151b;color:#ff9aa5}.fingerprints{margin-top:12px}.fingerprints label{color:var(--text);display:flex;gap:8px;align-items:flex-start}.fingerprints input{width:auto;margin-top:4px}
+    #login{max-width:390px;margin:12vh auto}.hidden{display:none!important}@media(max-width:720px){.grid,.facts{grid-template-columns:1fr}.wide{grid-column:auto}main{margin-top:22px}}
+  </style>
+</head>
+<body>
+<main>
+  <section id="login" class="card">
+    <h1>VPN AP</h1><p class="muted">Локальное управление Raspberry Pi</p>
+    <label>Логин</label><input id="loginUser" autocomplete="username">
+    <label>Пароль</label><input id="loginPass" type="password" autocomplete="current-password">
+    <button onclick="login()">Войти</button><div id="loginMsg" class="message"></div>
+  </section>
+
+  <section id="app" class="hidden">
+    <div class="top"><div><h1>VPN AP</h1><span class="muted" id="lanUrl"></span></div><button class="secondary" onclick="logout()">Выйти</button></div>
+    <div class="facts">
+      <div class="fact"><span class="muted">WiFi</span><b id="factSsid">—</b></div>
+      <div class="fact"><span class="muted">VPS</span><b id="factVps">—</b></div>
+      <div class="fact"><span class="muted">Внешний IP</span><b id="factExit">—</b></div>
+      <div class="fact"><span class="muted">AP gateway</span><b id="factGateway">—</b></div>
+    </div>
+    <div class="grid">
+      <section class="card wide"><h2>Состояние</h2><div id="services" class="services"></div><button class="secondary" onclick="restartTunnel()">Перезапустить туннель</button></section>
+      <section class="card">
+        <h2>Сменить VPS</h2><p class="muted">Сначала проверьте fingerprint. Текущий туннель останется активным до успешного теста нового.</p>
+        <label>IPv4</label><input id="vpsHost" inputmode="decimal">
+        <label>SSH-логин</label><input id="vpsUser">
+        <label>SSH-пароль</label><input id="vpsPass" type="password" autocomplete="new-password">
+        <button class="secondary" onclick="fingerprint()">Получить fingerprint</button>
+        <div id="fingerprints" class="fingerprints"></div>
+        <button id="applyVps" onclick="applyVps()" disabled>Проверить и переключить</button>
+        <div id="vpsMsg" class="message"></div>
+      </section>
+      <section class="card">
+        <h2>Точка доступа</h2><p class="muted">После сохранения WiFi-клиенты будут переподключены. Проводная панель останется доступна.</p>
+        <label>SSID</label><input id="apSsid">
+        <label>Новый WiFi-пароль</label><input id="apPass" type="password" placeholder="Оставьте пустым, чтобы не менять">
+        <label>Страна</label><input id="apCountry" value="RU" maxlength="2">
+        <label>Канал</label><select id="apChannel"><option>1</option><option selected>6</option><option>11</option></select>
+        <button onclick="applyAp()">Сохранить WiFi</button><div id="apMsg" class="message"></div>
+      </section>
+    </div>
+  </section>
+</main>
+<script>
+let csrf='', acceptedFingerprint='';
+const $=id=>document.getElementById(id);
+function message(id,text,error=false){const e=$(id);e.textContent=text;e.className='message'+(error?' error':'');e.style.display='block'}
+async function api(path,options={}){options.headers={'Content-Type':'application/json',...(csrf?{'X-CSRF-Token':csrf}:{}),...(options.headers||{})};const r=await fetch(path,options);const d=await r.json().catch(()=>({error:'Некорректный ответ'}));if(!r.ok)throw new Error(d.error||`HTTP ${r.status}`);return d}
+async function login(){try{const d=await api('/api/login',{method:'POST',body:JSON.stringify({username:$('loginUser').value,password:$('loginPass').value})});csrf=d.csrf;$('loginPass').value='';$('login').classList.add('hidden');$('app').classList.remove('hidden');await refresh()}catch(e){message('loginMsg',e.message,true)}}
+async function restore(){try{const d=await api('/api/session');csrf=d.csrf;$('login').classList.add('hidden');$('app').classList.remove('hidden');await refresh()}catch(_){}}
+async function refresh(){const d=await api('/api/status');$('factSsid').textContent=d.ssid||'—';$('factVps').textContent=(d.vps_user?d.vps_user+'@':'')+(d.vps_host||'—');$('factExit').textContent=d.exit_ip||'—';$('factGateway').textContent=d.gateway||'—';$('lanUrl').textContent=d.lan_url;$('vpsHost').value=d.vps_host||'';$('vpsUser').value=d.vps_user||'';$('apSsid').value=d.ssid||'';const box=$('services');box.textContent='';Object.entries(d.services).forEach(([name,state])=>{const p=document.createElement('span');p.className='pill '+(state==='active'?'ok':'');p.textContent=`${name}: ${state}`;box.appendChild(p)})}
+async function fingerprint(){acceptedFingerprint='';$('applyVps').disabled=true;$('fingerprints').textContent='';try{const d=await api('/api/vps/fingerprint',{method:'POST',body:JSON.stringify({host:$('vpsHost').value,user:$('vpsUser').value})});d.fingerprints.forEach((f,i)=>{const l=document.createElement('label'),r=document.createElement('input'),s=document.createElement('span');r.type='radio';r.name='fp';r.onchange=()=>{acceptedFingerprint=f.fingerprint;$('applyVps').disabled=false};s.textContent=f.description;l.append(r,s);$('fingerprints').appendChild(l)});message('vpsMsg','Сверьте fingerprint с консолью VPS и выберите совпадающий.')}catch(e){message('vpsMsg',e.message,true)}}
+async function applyVps(){if(!acceptedFingerprint)return;const b=$('applyVps');b.disabled=true;message('vpsMsg','Проверяется новый туннель…');try{await api('/api/vps/apply',{method:'POST',body:JSON.stringify({host:$('vpsHost').value,user:$('vpsUser').value,password:$('vpsPass').value,fingerprint:acceptedFingerprint})});$('vpsPass').value='';message('vpsMsg','VPS успешно изменён.');await refresh()}catch(e){message('vpsMsg',e.message,true)}finally{b.disabled=false}}
+async function applyAp(){try{await api('/api/ap/apply',{method:'POST',body:JSON.stringify({ssid:$('apSsid').value,password:$('apPass').value,country:$('apCountry').value,channel:Number($('apChannel').value)})});$('apPass').value='';message('apMsg','Настройки сохранены. WiFi перезапущен.');await refresh()}catch(e){message('apMsg',e.message,true)}}
+async function restartTunnel(){try{await api('/api/tunnel/restart',{method:'POST',body:'{}'});await new Promise(r=>setTimeout(r,2500));await refresh()}catch(e){alert(e.message)}}
+async function logout(){try{await api('/api/logout',{method:'POST',body:'{}'})}catch(_){}location.reload()}
+restore();
+</script>
+</body>
+</html>
