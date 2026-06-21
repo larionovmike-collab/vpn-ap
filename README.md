@@ -138,10 +138,13 @@ curl -fsSL https://raw.githubusercontent.com/larionovmike-collab/vpn-ap/refs/hea
 
 ```bash
 curl -4 -fL --connect-timeout 10 --max-time 30 \
+  --socks5-hostname 127.0.0.1:1080 \
   https://raw.githubusercontent.com/larionovmike-collab/vpn-ap/refs/heads/main/install-panel.sh \
   -o /tmp/install-panel.sh
 sudo bash /tmp/install-panel.sh
 ```
+
+Параметр `--socks5-hostname` нужен, если прямой доступ Raspberry к GitHub Raw блокируется. После запуска `install-panel.sh` сам обнаруживает локальный SOCKS и использует его для загрузки остальных файлов панели.
 
 Установщик запросит отдельный логин и пароль администратора панели. Пароль хранится только как `scrypt`-хеш. Использовать SSH-пароль Raspberry не требуется.
 

@@ -25,6 +25,14 @@ LAN_CIDR=$(ip -o -4 address show dev "$LAN_IF" scope global | awk 'NR==1 {print 
 LAN_IP=${LAN_CIDR%/*}
 log "Wired interface detected: $LAN_IF ($LAN_CIDR)"
 
+CURL_PROXY_ARGS=()
+if timeout 2 bash -c '</dev/tcp/127.0.0.1/1080' 2>/dev/null; then
+    CURL_PROXY_ARGS=(--socks5-hostname 127.0.0.1:1080)
+    log "SSH SOCKS detected; GitHub assets will be downloaded through the tunnel"
+else
+    log "SSH SOCKS is not listening; GitHub assets will use the direct connection"
+fi
+
 prompt PANEL_USER "Panel administrator login" "admin"
 [[ $PANEL_USER =~ ^[A-Za-z_][A-Za-z0-9_.-]{2,31}$ ]] || die "Invalid panel login."
 secret PANEL_PASSWORD "Panel administrator password (minimum 12 characters)"
@@ -70,9 +78,9 @@ if [[ -r "$SOURCE_ROOT/panel/vpn_ap_panel.py" && -r "$SOURCE_ROOT/panel/index.ht
 else
     RAW_BASE=${VPN_AP_RAW_BASE:-$RAW_BASE_DEFAULT}
     log "Downloading panel assets from $RAW_BASE"
-    curl -fsSL "$RAW_BASE/panel/vpn_ap_panel.py" -o "$TMP/vpn_ap_panel.py"
-    curl -fsSL "$RAW_BASE/panel/index.html" -o "$TMP/index.html"
-    curl -fsSL "$RAW_BASE/change-vps.sh" -o "$TMP/change-vps.sh"
+    curl "${CURL_PROXY_ARGS[@]}" -fsSL --connect-timeout 10 --max-time 60 "$RAW_BASE/panel/vpn_ap_panel.py" -o "$TMP/vpn_ap_panel.py"
+    curl "${CURL_PROXY_ARGS[@]}" -fsSL --connect-timeout 10 --max-time 60 "$RAW_BASE/panel/index.html" -o "$TMP/index.html"
+    curl "${CURL_PROXY_ARGS[@]}" -fsSL --connect-timeout 10 --max-time 60 "$RAW_BASE/change-vps.sh" -o "$TMP/change-vps.sh"
     CHANGE_VPS_SOURCE="$TMP/change-vps.sh"
 fi
 python3 -m py_compile "$TMP/vpn_ap_panel.py"
