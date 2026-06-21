@@ -10,7 +10,8 @@
     main{width:min(980px,calc(100% - 32px));margin:42px auto}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}h1{font-size:25px;margin:0}h2{font-size:17px;margin:0 0 17px}.muted{color:var(--muted)}
     .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}.card{background:color-mix(in srgb,var(--card) 94%,transparent);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 18px 60px #0004}.wide{grid-column:1/-1}
     label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,select{width:100%;border:1px solid var(--line);border-radius:10px;background:#0b121d;color:var(--text);padding:11px 12px;outline:none}input:focus,select:focus{border-color:var(--accent)}
-    button{border:0;border-radius:10px;padding:11px 15px;background:var(--accent);color:#062219;font-weight:700;cursor:pointer;margin-top:16px}button.secondary{background:#243044;color:var(--text)}button.danger{background:var(--danger);color:#2c0710}button:disabled{opacity:.5;cursor:wait}
+    button{border:0;border-radius:10px;padding:11px 15px;background:var(--accent);color:#062219;font-weight:700;cursor:pointer;margin-top:16px;transition:transform .12s ease,filter .16s ease,box-shadow .16s ease,background-color .16s ease}button.secondary{background:#243044;color:var(--text)}button.danger{background:var(--danger);color:#2c0710}button:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 45%,transparent);outline-offset:3px}button:active:not(:disabled){transform:translateY(1px) scale(.985);filter:brightness(.9);box-shadow:none}button:disabled{opacity:.5;cursor:wait}
+    @media(hover:hover){button:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.08);box-shadow:0 8px 24px #0005}button.secondary:hover:not(:disabled){background:#30405a}}
     .services{display:flex;flex-wrap:wrap;gap:8px}.pill{padding:7px 10px;border-radius:99px;background:#1d2939;color:var(--muted);font-size:12px}.pill.ok{color:var(--accent);background:#123029}.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}.fact{background:#0c1420;border:1px solid var(--line);border-radius:12px;padding:13px}.fact b{display:block;margin-top:3px;overflow-wrap:anywhere}
     .message{display:none;margin:16px 0 0;padding:11px;border-radius:10px;background:#10271f;color:var(--accent);white-space:pre-wrap}.message.error{background:#30151b;color:#ff9aa5}.fingerprints{margin-top:12px}.fingerprints label{color:var(--text);display:flex;gap:8px;align-items:flex-start}.fingerprints input{width:auto;margin-top:4px}
     #login{max-width:390px;margin:12vh auto}.hidden{display:none!important}@media(max-width:720px){.grid,.facts{grid-template-columns:1fr}.wide{grid-column:auto}main{margin-top:22px}}
@@ -20,9 +21,11 @@
 <main>
   <section id="login" class="card">
     <h1>VPN AP</h1><p class="muted">Локальное управление Raspberry Pi</p>
-    <label>Логин</label><input id="loginUser" autocomplete="username">
-    <label>Пароль</label><input id="loginPass" type="password" autocomplete="current-password">
-    <button onclick="login()">Войти</button><div id="loginMsg" class="message"></div>
+    <form id="loginForm" onsubmit="login();return false">
+      <label>Логин</label><input id="loginUser" autocomplete="username" autofocus>
+      <label>Пароль</label><input id="loginPass" type="password" autocomplete="current-password">
+      <button type="submit">Войти</button>
+    </form><div id="loginMsg" class="message"></div>
   </section>
 
   <section id="app" class="hidden">
