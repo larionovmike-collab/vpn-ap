@@ -508,7 +508,6 @@ EOF
 
 dnsmasq --test
 redsocks -t -c /etc/redsocks-vpn-ap.conf
-dnscrypt-proxy -check -config /etc/dnscrypt-proxy/dnscrypt-proxy.toml
 systemctl daemon-reload
 systemd-analyze verify vpn-ap-interface.service vpn-ap-socks.service \
     vpn-ap-redsocks.service vpn-ap-transparent.service
@@ -528,6 +527,8 @@ EXPECTED_IP=$(curl --socks5-hostname "127.0.0.1:$SOCKS_PORT" --connect-timeout 8
 [[ $EXPECTED_IP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Could not verify the SOCKS exit IPv4."
 log "SSH SOCKS verified; exit IPv4 is $EXPECTED_IP"
 
+dnscrypt-proxy -check -config /etc/dnscrypt-proxy/dnscrypt-proxy.toml
+log "DNSCrypt configuration and resolver source verified through SOCKS"
 systemctl enable --now dnscrypt-proxy.service
 for _ in {1..20}; do
     if dig @127.0.0.1 -p "$DNSCRYPT_PORT" example.com A +short | grep -qE '^[0-9]+\.'; then break; fi
